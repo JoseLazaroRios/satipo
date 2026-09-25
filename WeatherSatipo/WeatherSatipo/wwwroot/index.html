@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Detector de Incendios Forestales — Satipo, Junín</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+<style>
+  :root {
+    --bg: #10151a;
+    --panel: #182027;
+    --border: #2a343d;
+    --text: #e8edf1;
+    --muted: #9aa7b2;
+    --accent: #ff8a3d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    padding: 14px 20px;
+    background: #0c1115;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+  }
+  header p {
+    margin: 2px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .layout {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  #map {
+    flex: 1.3;
+    min-width: 0;
+  }
+  #panel {
+    flex: 1;
+    max-width: 420px;
+    padding: 18px;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .card {
+    background: #1e2830;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .card h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 14px;
+    border-bottom: 1px dashed #2a343d;
+  }
+  .row:last-child { border-bottom: none; }
+  .row span:first-child { color: var(--muted); }
+  .badge {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 15px;
+    color: #10151a;
+  }
+  .recomendacion {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  #loading {
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .refresh-btn {
+    background: var(--accent);
+    color: #10151a;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .refresh-btn:hover { opacity: 0.9; }
+  .timestamp {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔥 Detector de Incendios Forestales — Satipo, Junín</h1>
+  <p>Monitoreo de condiciones ambientales relacionadas con riesgo de incendio</p>
+</header>
+
+<div class="layout">
+  <div id="map"></div>
+
+  <div id="panel">
+    <p id="loading">Cargando reporte…</p>
+
+    <div id="contenido" style="display:none;">
+
+      <div class="card">
+        <h3>Nivel de riesgo</h3>
+        <span id="badgeRiesgo" class="badge">—</span>
+        <p class="recomendacion" id="recomendacion"></p>
+      </div>
+
+      <div class="card">
+        <h3>Condiciones actuales</h3>
+        <div class="row"><span>Temperatura</span><span id="temp"></span></div>
+        <div class="row"><span>Sensación térmica</span><span id="sensacion"></span></div>
+        <div class="row"><span>Humedad relativa</span><span id="humedad"></span></div>
+        <div class="row"><span>Viento</span><span id="viento"></span></div>
+        <div class="row"><span>Descripción</span><span id="descripcion"></span></div>
+        <div class="row"><span>Lluvia (última hora)</span><span id="lluvia"></span></div>
+      </div>
+
+      <div class="card">
+        <h3>Calidad del aire</h3>
+        <div class="row"><span>Índice AQI</span><span id="aqi"></span></div>
+        <div class="row"><span>PM2.5</span><span id="pm25"></span></div>
+        <p class="recomendacion" id="interpretacionAire"></p>
+      </div>
+
+      <button class="refresh-btn" onclick="cargarReporte()">Actualizar reporte</button>
+      <p class="timestamp" id="timestamp"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Mapa centrado en Satipo, Junín, Perú
+  const SATIPO = [-11.2522, -74.6386];
+  const map = L.map('map').setView(SATIPO, 11);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const marcador = L.marker(SATIPO).addTo(map);
+  marcador.bindPopup("<b>Satipo, Junín</b><br>Punto de monitoreo").openPopup();
+
+  async function cargarReporte() {
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('contenido').style.display = 'none';
+
+    try {
+      const res = await fetch('/api/reporte-incendio');
+      const data = await res.json();
+
+      document.getElementById('temp').textContent = `${data.condicionesActuales.temperaturaC} °C`;
+      document.getElementById('sensacion').textContent = `${data.condicionesActuales.sensacionTermicaC} °C`;
+      document.getElementById('humedad').textContent = `${data.condicionesActuales.humedadPorcentaje}%`;
+      document.getElementById('viento').textContent = `${data.condicionesActuales.vientoMs} m/s`;
+      document.getElementById('descripcion').textContent = data.condicionesActuales.descripcion;
+      document.getElementById('lluvia').textContent = `${data.condicionesActuales.lluviaUltimaHoraMm} mm`;
+
+      document.getElementById('aqi').textContent = `${data.calidadDelAire.indiceAqi} (${data.calidadDelAire.categoriaAqi})`;
+      document.getElementById('pm25').textContent = `${data.calidadDelAire.pm2_5} µg/m³`;
+      document.getElementById('interpretacionAire').textContent = data.calidadDelAire.interpretacion;
+
+      const badge = document.getElementById('badgeRiesgo');
+      badge.textContent = `${data.riesgoIncendio.nivel} (${data.riesgoIncendio.puntaje}/6)`;
+      badge.style.background = data.riesgoIncendio.color;
+      document.getElementById('recomendacion').textContent = data.riesgoIncendio.recomendacion;
+
+      document.getElementById('timestamp').textContent =
+        'Última actualización: ' + new Date(data.consultadoEn).toLocaleString('es-PE');
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('contenido').style.display = 'block';
+    } catch (e) {
+      document.getElementById('loading').textContent =
+        'Error al cargar el reporte. Verifica tu API Key o tu conexión.';
+    }
+  }
+
+  cargarReporte();
+</script>
+
+</body>
+</html>
